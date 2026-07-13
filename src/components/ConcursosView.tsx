@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { User } from "../types";
+import { LocalDB } from "../db";
 import { LOCAL_CONCURSOS_QUESTIONS, ConcursoQuestion } from "../data/concursosQuestions";
 
 interface ConcursosViewProps {
@@ -57,13 +58,11 @@ export default function ConcursosView({ user }: ConcursosViewProps) {
   const [activeTab, setActiveTab] = useState<"simular" | "historico">("simular");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Load history from localStorage on mount
+  // Load history from LocalDB on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(`oc_simulados_history_${user.id}`);
-      if (stored) {
-        setHistory(JSON.parse(stored));
-      }
+      const stored = LocalDB.getSimuladosHistory(user.id);
+      setHistory(stored);
     } catch (e) {
       console.error("Erro ao carregar histórico de simulados", e);
     }
@@ -292,7 +291,7 @@ export default function ConcursosView({ user }: ConcursosViewProps) {
     const updatedHistory = [newHistoryItem, ...history];
     setHistory(updatedHistory);
     try {
-      localStorage.setItem(`oc_simulados_history_${user.id}`, JSON.stringify(updatedHistory));
+      LocalDB.saveSimuladosHistory(user.id, updatedHistory);
     } catch (e) {
       console.error(e);
     }
@@ -304,13 +303,13 @@ export default function ConcursosView({ user }: ConcursosViewProps) {
     e.stopPropagation();
     const updated = history.filter(item => item.id !== idToDelete);
     setHistory(updated);
-    localStorage.setItem(`oc_simulados_history_${user.id}`, JSON.stringify(updated));
+    LocalDB.saveSimuladosHistory(user.id, updated);
   };
 
   const handleClearHistory = () => {
     if (window.confirm("Deseja realmente apagar todo o seu histórico de simulados?")) {
       setHistory([]);
-      localStorage.removeItem(`oc_simulados_history_${user.id}`);
+      LocalDB.saveSimuladosHistory(user.id, []);
     }
   };
 

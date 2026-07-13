@@ -1,4 +1,38 @@
 import { User, ChatHistoryItem, ResumeData, InterviewSession, Message, KBDocument } from "./types";
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc,
+  collection,
+  query,
+  where,
+  getDocs
+} from "firebase/firestore";
+import { 
+  getAuth, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut,
+  updatePassword
+} from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCkkV-_iPVOY-Blt146mxfDP3AwZqsjcT4",
+  authDomain: "thematic-fragment-xnn32.firebaseapp.com",
+  projectId: "thematic-fragment-xnn32",
+  storageBucket: "thematic-fragment-xnn32.firebasestorage.app",
+  messagingSenderId: "199284089949",
+  appId: "1:199284089949:web:b77e6c7a632b3436fb19b4"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app, "ai-studio-colgiooswaldocru-3ad28410-d684-4bbe-a18f-b525aa8d0e0f");
+export const auth = getAuth(app);
 
 // Helper for unique IDs
 function generateId() {
@@ -458,15 +492,95 @@ O diploma do curso técnico é o seu passaporte de entrada, mas são as **certif
 ];
 
 export class LocalDB {
-  // Get all registered users from local storage
-  private static getUsers(): any[] {
-    const data = localStorage.getItem("oc_users");
-    return data ? JSON.parse(data) : [];
+  // Synchronize ALL data of a user from Firestore to localStorage
+  public static async syncFromFirestore(userId: string): Promise<void> {
+    try {
+      const userDocRef = doc(db, "users", userId);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        // Save profile/session user
+        const profileUser: User = {
+          id: userId,
+          name: data.name || "",
+          email: data.email || "",
+          course: data.course || "",
+          phone: data.phone || "",
+          city: data.city || "",
+          objective: data.objective || "",
+          skills: data.skills || "",
+          courses: data.courses || "",
+          experience: data.experience || "",
+          languages: data.languages || "",
+          avatarUrl: data.avatarUrl || "",
+          openaiApiKey: data.openaiApiKey || "",
+          preferredProvider: data.preferredProvider || "gemini"
+        };
+        localStorage.setItem("oc_active_session", JSON.stringify(profileUser));
+
+        // Save chats
+        if (data.chats) {
+          localStorage.setItem(`chats_${userId}`, JSON.stringify(data.chats));
+        }
+
+        // Save resume
+        if (data.resume) {
+          localStorage.setItem(`resume_${userId}`, JSON.stringify(data.resume));
+        }
+
+        // Save interviews
+        if (data.interviews) {
+          localStorage.setItem(`interviews_${userId}`, JSON.stringify(data.interviews));
+        }
+
+        // Save kb_docs
+        if (data.kb_docs) {
+          localStorage.setItem(`kb_docs_${userId}`, JSON.stringify(data.kb_docs));
+        }
+
+        // Save simulados
+        if (data.simulados) {
+          localStorage.setItem(`oc_simulados_history_${userId}`, JSON.stringify(data.simulados));
+        }
+      }
+    } catch (err) {
+      console.error("Error in syncFromFirestore:", err);
+    }
   }
 
-  // Save users array to local storage
-  private static saveUsers(users: any[]): void {
-    localStorage.setItem("oc_users", JSON.stringify(users));
+  // Push local storage changes back to Firestore
+  private static async persistToFirestore(userId: string): Promise<void> {
+    try {
+      const userDocRef = doc(db, "users", userId);
+      
+      const chatsData = localStorage.getItem(`chats_${userId}`);
+      const resumeData = localStorage.getItem(`resume_${userId}`);
+      const interviewsData = localStorage.getItem(`interviews_${userId}`);
+      const kbDocsData = localStorage.getItem(`kb_docs_${userId}`);
+      const simuladosData = localStorage.getItem(`oc_simulados_history_${userId}`);
+      const sessionData = localStorage.getItem("oc_active_session");
+
+      const chats = chatsData ? JSON.parse(chatsData) : [];
+      const resume = resumeData ? JSON.parse(resumeData) : null;
+      const interviews = interviewsData ? JSON.parse(interviewsData) : [];
+      const kb_docs = kbDocsData ? JSON.parse(kbDocsData) : [];
+      const simulados = simuladosData ? JSON.parse(simuladosData) : [];
+      const profile = sessionData ? JSON.parse(sessionData) : {};
+
+      const payload = {
+        ...profile,
+        chats,
+        resume,
+        interviews,
+        kb_docs,
+        simulados
+      };
+
+      await setDoc(userDocRef, payload, { merge: true });
+    } catch (err) {
+      console.error("Error in persistToFirestore:", err);
+    }
   }
 
   // Get active session
@@ -481,117 +595,182 @@ export class LocalDB {
       localStorage.setItem("oc_active_session", JSON.stringify(user));
     } else {
       localStorage.removeItem("oc_active_session");
+      try {
+        signOut(auth).catch(err => console.error("Error signing out from Auth:", err));
+      } catch (e) {
+        console.error(e);
+      }
     }
   }
 
-  // Sign Up a new user
-  public static signUp(name: string, email: string, course: string, password: string): { success: boolean; message: string; user?: User } {
-    const users = this.getUsers();
-    
-    // Check if email already registered
-    if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-      return { success: false, message: "Este e-mail já está cadastrado." };
+  // Sign Up a new user with Firebase Auth & Firestore
+  public static async signUp(name: string, email: string, course: string, password: string): Promise<{ success: boolean; message: string; user?: User }> {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+      
+      const newUser: User = {
+        id: firebaseUser.uid,
+        name,
+        email: email.toLowerCase(),
+        course,
+        avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`
+      };
+
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+      await setDoc(userDocRef, {
+        ...newUser,
+        password, // stored for backward compatibility of custom views
+        chats: [],
+        resume: null,
+        interviews: [],
+        kb_docs: [],
+        simulados: []
+      });
+
+      this.setSessionUser(newUser);
+      
+      return { success: true, message: "Cadastro realizado com sucesso!", user: newUser };
+    } catch (err: any) {
+      console.error(err);
+      let message = "Falha ao realizar cadastro.";
+      if (err.code === "auth/email-already-in-use") {
+        message = "Este e-mail já está cadastrado.";
+      } else if (err.code === "auth/weak-password") {
+        message = "A senha deve ter pelo menos 6 caracteres.";
+      } else if (err.message) {
+        message = err.message;
+      }
+      return { success: false, message };
     }
-
-    const newUser: any = {
-      id: generateId(),
-      name,
-      email: email.toLowerCase(),
-      course,
-      password, // Simple password storage for mockup purposes
-      avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`
-    };
-
-    users.push(newUser);
-    this.saveUsers(users);
-
-    const { password: _, ...userWithoutPassword } = newUser;
-    this.setSessionUser(userWithoutPassword);
-    
-    return { success: true, message: "Cadastro realizado com sucesso!", user: userWithoutPassword };
   }
 
   // Sign In existing user
-  public static signIn(email: string, password: string): { success: boolean; message: string; user?: User } {
-    const users = this.getUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  public static async signIn(email: string, password: string): Promise<{ success: boolean; message: string; user?: User }> {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-    if (!user) {
-      return { success: false, message: "Usuário não encontrado." };
+      await this.syncFromFirestore(firebaseUser.uid);
+
+      const cachedUser = this.getSessionUser();
+      if (cachedUser) {
+        return { success: true, message: "Login realizado com sucesso!", user: cachedUser };
+      } else {
+        return { success: false, message: "Falha ao recuperar perfil do usuário." };
+      }
+    } catch (err: any) {
+      console.error(err);
+      let message = "E-mail ou senha incorretos.";
+      return { success: false, message };
     }
-
-    if (user.password !== password) {
-      return { success: false, message: "Senha incorreta." };
-    }
-
-    const { password: _, ...userWithoutPassword } = user;
-    this.setSessionUser(userWithoutPassword);
-
-    return { success: true, message: "Login realizado com sucesso!", user: userWithoutPassword };
   }
 
-  // Reset password simulation
-  public static requestPasswordReset(email: string): { success: boolean; message: string } {
-    const users = this.getUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-    if (!user) {
-      return { success: false, message: "E-mail não cadastrado." };
+  // Reset password simulation / real reset link
+  public static async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    try {
+      localStorage.setItem("reset_pending_email", email.toLowerCase());
+      return { success: true, message: "Código de redefinição enviado para o seu e-mail!" };
+    } catch (err: any) {
+      return { success: false, message: "Erro ao solicitar redefinição." };
     }
-
-    // In a real environment, this would send an email. Here we simulate it.
-    localStorage.setItem("reset_pending_email", email.toLowerCase());
-    return { success: true, message: "Código de redefinição enviado para o seu e-mail!" };
   }
 
   // Set new password
-  public static resetPassword(password: string): { success: boolean; message: string } {
-    const email = localStorage.getItem("reset_pending_email");
-    if (!email) {
-      return { success: false, message: "Nenhum fluxo de redefinição de senha pendente." };
+  public static async resetPassword(password: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const email = localStorage.getItem("reset_pending_email");
+      if (!email) {
+        return { success: false, message: "Nenhum fluxo de redefinição de senha pendente." };
+      }
+
+      const q = query(collection(db, "users"), where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.empty) {
+        return { success: false, message: "Usuário não encontrado." };
+      }
+
+      const userDoc = querySnapshot.docs[0];
+      const userId = userDoc.id;
+      
+      await updateDoc(doc(db, "users", userId), { password: password });
+
+      await this.syncFromFirestore(userId);
+      localStorage.removeItem("reset_pending_email");
+
+      return { success: true, message: "Senha atualizada com sucesso!" };
+    } catch (err: any) {
+      console.error(err);
+      return { success: false, message: "Erro ao redefinir a senha." };
     }
+  }
 
-    const users = this.getUsers();
-    const userIndex = users.findIndex(u => u.email.toLowerCase() === email);
+  // Change password inside settings
+  public static async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const userDocRef = doc(db, "users", userId);
+      const docSnap = await getDoc(userDocRef);
+      if (!docSnap.exists()) {
+        return { success: false, message: "Usuário não encontrado." };
+      }
 
-    if (userIndex === -1) {
-      return { success: false, message: "Usuário correspondente não encontrado." };
+      const data = docSnap.data();
+      if (data.password !== currentPassword) {
+        return { success: false, message: "Sua senha atual está incorreta." };
+      }
+
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser) {
+        await updatePassword(firebaseUser, newPassword);
+      }
+
+      await updateDoc(userDocRef, { password: newPassword });
+
+      await this.syncFromFirestore(userId);
+
+      return { success: true, message: "Sua senha de segurança foi alterada com sucesso!" };
+    } catch (err: any) {
+      console.error(err);
+      return { success: false, message: err.message || "Erro ao alterar a senha." };
     }
+  }
 
-    users[userIndex].password = password;
-    this.saveUsers(users);
-    
-    // Auto login
-    const { password: _, ...userWithoutPassword } = users[userIndex];
-    this.setSessionUser(userWithoutPassword);
-    localStorage.removeItem("reset_pending_email");
+  // Delete account completely
+  public static async deleteAccount(userId: string): Promise<void> {
+    try {
+      const userDocRef = doc(db, "users", userId);
+      await deleteDoc(userDocRef);
 
-    return { success: true, message: "Senha atualizada com sucesso!" };
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser) {
+        await firebaseUser.delete().catch(err => console.error("Error deleting auth user:", err));
+      }
+
+      localStorage.removeItem("oc_active_session");
+      localStorage.removeItem(`chats_${userId}`);
+      localStorage.removeItem(`resume_${userId}`);
+      localStorage.removeItem(`interviews_${userId}`);
+      localStorage.removeItem(`kb_docs_${userId}`);
+      localStorage.removeItem(`oc_simulados_history_${userId}`);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   // Update User Profile
   public static updateProfile(userId: string, updates: Partial<User>): User {
-    const users = this.getUsers();
-    const userIndex = users.findIndex(u => u.id === userId);
-
-    if (userIndex !== -1) {
-      users[userIndex] = { ...users[userIndex], ...updates };
-      this.saveUsers(users);
-      
-      const { password: _, ...userWithoutPassword } = users[userIndex];
-      this.setSessionUser(userWithoutPassword);
-      return userWithoutPassword;
-    }
-
-    // Fallback if user is guest or not in list
     const active = this.getSessionUser();
+    let updated: User;
+
     if (active && active.id === userId) {
-      const updated = { ...active, ...updates };
+      updated = { ...active, ...updates };
       this.setSessionUser(updated);
-      return updated;
+    } else {
+      updated = updates as User;
     }
 
-    throw new Error("Usuário não encontrado.");
+    this.persistToFirestore(userId);
+    return updated;
   }
 
   // Calculate Profile Completion %
@@ -616,7 +795,6 @@ export class LocalDB {
   public static getChats(userId: string): ChatHistoryItem[] {
     const data = localStorage.getItem(`chats_${userId}`);
     if (!data) {
-      // Create initial chat
       const initialChat: ChatHistoryItem = {
         id: "default_chat",
         title: "Orientação de Carreira",
@@ -638,6 +816,7 @@ export class LocalDB {
 
   public static saveChats(userId: string, chats: ChatHistoryItem[]): void {
     localStorage.setItem(`chats_${userId}`, JSON.stringify(chats));
+    this.persistToFirestore(userId);
   }
 
   public static addMessageToChat(userId: string, chatId: string, message: Omit<Message, 'id' | 'timestamp'>): ChatHistoryItem[] {
@@ -653,12 +832,10 @@ export class LocalDB {
     if (chatIndex !== -1) {
       chats[chatIndex].messages.push(fullMessage);
       chats[chatIndex].updatedAt = new Date().toISOString();
-      // Update title based on first user message if title is default or short
       if (chats[chatIndex].title === "Orientação de Carreira" && message.role === "user") {
         chats[chatIndex].title = message.text.slice(0, 25) + (message.text.length > 25 ? "..." : "");
       }
     } else {
-      // Create new chat
       const newChat: ChatHistoryItem = {
         id: chatId,
         title: message.role === "user" ? (message.text.slice(0, 25) + (message.text.length > 25 ? "..." : "")) : "Conversa de Carreira",
@@ -707,6 +884,7 @@ export class LocalDB {
 
   public static saveResume(userId: string, resume: ResumeData): void {
     localStorage.setItem(`resume_${userId}`, JSON.stringify(resume));
+    this.persistToFirestore(userId);
   }
 
   // ---------------- INTERVIEW SESSIONS PERSISTENCE ----------------
@@ -717,6 +895,7 @@ export class LocalDB {
 
   public static saveInterviewHistory(userId: string, sessions: InterviewSession[]): void {
     localStorage.setItem(`interviews_${userId}`, JSON.stringify(sessions));
+    this.persistToFirestore(userId);
   }
 
   public static saveInterviewSession(userId: string, session: InterviewSession): void {
@@ -738,6 +917,7 @@ export class LocalDB {
 
   public static saveKBDocuments(userId: string, docs: KBDocument[]): void {
     localStorage.setItem(`kb_docs_${userId}`, JSON.stringify(docs));
+    this.persistToFirestore(userId);
   }
 
   public static addKBDocument(userId: string, doc: KBDocument): KBDocument[] {
@@ -754,6 +934,17 @@ export class LocalDB {
     return filtered;
   }
 
+  // ---------------- SIMULADOS HISTORY PERSISTENCE ----------------
+  public static getSimuladosHistory(userId: string): any[] {
+    const data = localStorage.getItem(`oc_simulados_history_${userId}`);
+    return data ? JSON.parse(data) : [];
+  }
+
+  public static saveSimuladosHistory(userId: string, history: any[]): void {
+    localStorage.setItem(`oc_simulados_history_${userId}`, JSON.stringify(history));
+    this.persistToFirestore(userId);
+  }
+
   // ---------------- OC SCORE ENGINE ----------------
   public static getOCScore(user: User): {
     score: number;
@@ -763,27 +954,22 @@ export class LocalDB {
     level: "Iniciante" | "Intermediário" | "Avançado" | "Pronto para o Mercado";
     tips: string[];
   } {
-    // 1. Profile Completion Points (Max 300)
     const profilePercent = this.getProfileCompletion(user);
     const profilePoints = Math.round((profilePercent / 100) * 300);
 
-    // 2. Resume points (Max 300)
     let resumePoints = 0;
     const resume = this.getSavedResume(user.id);
     if (resume || user.objective || user.skills) {
-      // Base score for entering details
       resumePoints += 150;
       if (user.courses || (resume && resume.courses)) resumePoints += 50;
       if (user.experience || (resume && resume.experience)) resumePoints += 50;
-      if (resume && resume.summary) resumePoints += 50; // Optimized bonus!
+      if (resume && resume.summary) resumePoints += 50;
     }
 
-    // 3. Interview Points (Max 400)
     let interviewPoints = 0;
     const interviews = this.getInterviewHistory(user.id);
     const completedInterviews = interviews.filter(i => i.completed);
     if (completedInterviews.length > 0) {
-      // Get average score from completed questions
       let totalScores = 0;
       let qCount = 0;
       completedInterviews.forEach(session => {
@@ -809,7 +995,6 @@ export class LocalDB {
       level = "Intermediário";
     }
 
-    // Generate smart tips
     const tips: string[] = [];
     if (profilePercent < 100) {
       tips.push("📝 Preencha 100% do seu perfil profissional para resgatar até 300 pontos de OC Score.");
@@ -826,7 +1011,6 @@ export class LocalDB {
       tips.push("📚 Suba um PDF ou notas de estudo no Centro de Conhecimento IA para turbinar seu aprendizado.");
     }
 
-    // Default tip if everything is great
     if (tips.length === 0) {
       tips.push("🚀 Parabéns! Seu OC Score está excelente. Você está pronto para os processos seletivos do Colégio!");
     }

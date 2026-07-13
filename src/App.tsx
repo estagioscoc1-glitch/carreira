@@ -29,11 +29,26 @@ export default function App() {
 
   // Check active session on mount
   useEffect(() => {
-    const active = LocalDB.getSessionUser();
-    if (active) {
-      setUser(active);
+    async function initSession() {
+      try {
+        const active = LocalDB.getSessionUser();
+        if (active) {
+          // Sync fresh data from Firestore to local cache
+          await LocalDB.syncFromFirestore(active.id);
+          const refreshed = LocalDB.getSessionUser();
+          if (refreshed) {
+            setUser(refreshed);
+          } else {
+            setUser(active);
+          }
+        }
+      } catch (err) {
+        console.error("Error synchronizing active session from Firestore:", err);
+      } finally {
+        setCheckingSession(false);
+      }
     }
-    setCheckingSession(false);
+    initSession();
   }, []);
 
   // Sync dark mode class with root html element

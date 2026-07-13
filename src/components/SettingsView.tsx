@@ -46,7 +46,7 @@ export default function SettingsView({ user, onLogout, onProfileUpdate }: Settin
   const hasSpecial = /[^A-Za-z0-9]/.test(newPassword);
 
   // Handle password updates
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
     setSuccessMsg("");
@@ -69,55 +69,34 @@ export default function SettingsView({ user, onLogout, onProfileUpdate }: Settin
 
     setLoading(true);
 
-    setTimeout(() => {
-      // Fetch users from LocalDB to verify current password
-      const usersData = localStorage.getItem("oc_users");
-      const users = usersData ? JSON.parse(usersData) : [];
-      const userIdx = users.findIndex((u: any) => u.id === user.id);
-
-      if (userIdx !== -1) {
-        if (users[userIdx].password !== currentPassword) {
-          setErrorMsg("Sua senha atual está incorreta.");
-          setLoading(false);
-          return;
-        }
-
-        users[userIdx].password = newPassword;
-        localStorage.setItem("oc_users", JSON.stringify(users));
-        setSuccessMsg("Sua senha de segurança foi alterada com sucesso!");
-        
-        // Reset states
+    try {
+      const res = await LocalDB.changePassword(user.id, currentPassword, newPassword);
+      if (res.success) {
+        setSuccessMsg(res.message);
         setCurrentPassword("");
         setNewPassword("");
         setConfirmNewPassword("");
       } else {
-        // Guest user fallback update password
-        setSuccessMsg("Sua senha de convidado foi alterada com sucesso!");
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmNewPassword("");
+        setErrorMsg(res.message);
       }
+    } catch (err: any) {
+      setErrorMsg("Ocorreu um erro ao tentar alterar a senha.");
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
-  // Mocked Delete Account Flow
-  const handleDeleteAccount = () => {
+  // Delete Account Flow with Cloud Firestore cleanup
+  const handleDeleteAccount = async () => {
     const confirmDelete = window.confirm("ATENÇÃO: Tem certeza de que deseja excluir permanentemente sua conta? Esta ação é irreversível e todos os seus currículos e simulações serão perdidos.");
     if (confirmDelete) {
-      // Perform delete simulation
-      const usersData = localStorage.getItem("oc_users");
-      let users = usersData ? JSON.parse(usersData) : [];
-      users = users.filter((u: any) => u.id !== user.id);
-      localStorage.setItem("oc_users", JSON.stringify(users));
-
-      // Remove current chats, resume and interviews
-      localStorage.removeItem(`chats_${user.id}`);
-      localStorage.removeItem(`resume_${user.id}`);
-      localStorage.removeItem(`interviews_${user.id}`);
-
-      alert("Sua conta foi excluída com sucesso.");
-      onLogout();
+      try {
+        await LocalDB.deleteAccount(user.id);
+        alert("Sua conta foi excluída com sucesso.");
+        onLogout();
+      } catch (err) {
+        alert("Ocorreu um erro ao excluir a conta.");
+      }
     }
   };
 

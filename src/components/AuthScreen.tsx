@@ -64,108 +64,105 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const strength = getPasswordStrength();
 
   // Handle Form Submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
     setSuccessMsg("");
     setLoading(true);
 
-    // Simulate Network Latency for SaaS feeling
-    setTimeout(() => {
-      try {
-        if (mode === "login") {
-          if (!email || !password) {
-            setErrorMsg("Por favor, preencha todos os campos.");
-            setLoading(false);
-            return;
-          }
-          const res = LocalDB.signIn(email, password);
-          if (res.success && res.user) {
-            setSuccessMsg("Bem-vindo de volta! Redirecionando...");
-            setTimeout(() => onAuthSuccess(res.user!), 1000);
-          } else {
-            setErrorMsg(res.message);
-          }
-        } 
-        else if (mode === "register") {
-          if (!name || !email || !course || !password || !confirmPassword) {
-            setErrorMsg("Todos os campos são obrigatórios.");
-            setLoading(false);
-            return;
-          }
-          if (password !== confirmPassword) {
-            setErrorMsg("As senhas não coincidem.");
-            setLoading(false);
-            return;
-          }
-          
-          // Verify password strength requirements
-          const isStrong = hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecial;
-          if (!isStrong) {
-            setErrorMsg("A senha precisa atender a todos os requisitos de segurança.");
-            setLoading(false);
-            return;
-          }
-
-          const res = LocalDB.signUp(name, email, course, password);
-          if (res.success && res.user) {
-            setSuccessMsg("Cadastro efetuado com sucesso! Redirecionando...");
-            setTimeout(() => onAuthSuccess(res.user!), 1200);
-          } else {
-            setErrorMsg(res.message);
-          }
-        } 
-        else if (mode === "forgot") {
-          if (!email) {
-            setErrorMsg("Digite seu e-mail cadastrado.");
-            setLoading(false);
-            return;
-          }
-          const res = LocalDB.requestPasswordReset(email);
-          if (res.success) {
-            setSuccessMsg("Código de redefinição enviado com sucesso! Verifique seu e-mail.");
-            setTimeout(() => setMode("reset"), 2000);
-          } else {
-            setErrorMsg(res.message);
-          }
-        } 
-        else if (mode === "reset") {
-          if (!password || !confirmPassword) {
-            setErrorMsg("Preencha e confirme a nova senha.");
-            setLoading(false);
-            return;
-          }
-          if (password !== confirmPassword) {
-            setErrorMsg("As senhas não coincidem.");
-            setLoading(false);
-            return;
-          }
-          const isStrong = hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecial;
-          if (!isStrong) {
-            setErrorMsg("A senha precisa atender a todos os requisitos de segurança.");
-            setLoading(false);
-            return;
-          }
-
-          const res = LocalDB.resetPassword(password);
-          if (res.success) {
-            setSuccessMsg("Senha atualizada! Redirecionando para a plataforma...");
-            const user = LocalDB.getSessionUser();
-            if (user) {
-              setTimeout(() => onAuthSuccess(user), 1500);
-            } else {
-              setMode("login");
-            }
-          } else {
-            setErrorMsg(res.message);
-          }
+    try {
+      if (mode === "login") {
+        if (!email || !password) {
+          setErrorMsg("Por favor, preencha todos os campos.");
+          setLoading(false);
+          return;
         }
-      } catch (err: any) {
-        setErrorMsg("Ocorreu um erro no sistema. Tente novamente.");
-      } finally {
-        setLoading(false);
+        const res = await LocalDB.signIn(email, password);
+        if (res.success && res.user) {
+          setSuccessMsg("Bem-vindo de volta! Redirecionando...");
+          setTimeout(() => onAuthSuccess(res.user!), 1000);
+        } else {
+          setErrorMsg(res.message);
+        }
+      } 
+      else if (mode === "register") {
+        if (!name || !email || !course || !password || !confirmPassword) {
+          setErrorMsg("Todos os campos são obrigatórios.");
+          setLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setErrorMsg("As senhas não coincidem.");
+          setLoading(false);
+          return;
+        }
+        
+        // Verify password strength requirements
+        const isStrong = hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecial;
+        if (!isStrong) {
+          setErrorMsg("A senha precisa atender a todos os requisitos de segurança.");
+          setLoading(false);
+          return;
+        }
+
+        const res = await LocalDB.signUp(name, email, course, password);
+        if (res.success && res.user) {
+          setSuccessMsg("Cadastro efetuado com sucesso! Redirecionando...");
+          setTimeout(() => onAuthSuccess(res.user!), 1200);
+        } else {
+          setErrorMsg(res.message);
+        }
+      } 
+      else if (mode === "forgot") {
+        if (!email) {
+          setErrorMsg("Digite seu e-mail cadastrado.");
+          setLoading(false);
+          return;
+        }
+        const res = await LocalDB.requestPasswordReset(email);
+        if (res.success) {
+          setSuccessMsg("Código de redefinição enviado com sucesso! Verifique seu e-mail.");
+          setTimeout(() => setMode("reset"), 2000);
+        } else {
+          setErrorMsg(res.message);
+        }
+      } 
+      else if (mode === "reset") {
+        if (!password || !confirmPassword) {
+          setErrorMsg("Preencha e confirme a nova senha.");
+          setLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setErrorMsg("As senhas não coincidem.");
+          setLoading(false);
+          return;
+        }
+        const isStrong = hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecial;
+        if (!isStrong) {
+          setErrorMsg("A senha precisa atender a todos os requisitos de segurança.");
+          setLoading(false);
+          return;
+        }
+
+        const res = await LocalDB.resetPassword(password);
+        if (res.success) {
+          setSuccessMsg("Senha atualizada! Redirecionando para a plataforma...");
+          const user = LocalDB.getSessionUser();
+          if (user) {
+            setTimeout(() => onAuthSuccess(user), 1500);
+          } else {
+            setMode("login");
+          }
+        } else {
+          setErrorMsg(res.message);
+        }
       }
-    }, 800);
+    } catch (err: any) {
+      setErrorMsg("Ocorreu um erro no sistema. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
