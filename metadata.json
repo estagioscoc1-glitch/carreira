@@ -1,0 +1,6 @@
+{
+  "name": "LYnx EDU",
+  "description": "Seu caminho inteligente para o primeiro emprego. Plataforma premium de preparação profissional com Inteligência Artificial por LYnx EDU Sistemas Escolares Inteligentes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
